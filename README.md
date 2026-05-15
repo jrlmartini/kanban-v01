@@ -24,10 +24,18 @@ npm run check
 Para usar o Convex:
 
 ```bash
+npx convex login
 npm run convex:dev
 ```
 
-Depois defina `VITE_CONVEX_URL` em `.env.local`.
+Depois copie `.env.example` para `.env.local` e defina `VITE_CONVEX_URL` com a URL do deployment exibida pelo Convex.
+
+Para Vercel:
+
+- framework: Vite;
+- build command: `npm run build`;
+- output directory: `dist`;
+- environment variable: `VITE_CONVEX_URL`.
 
 ## Estrutura
 
