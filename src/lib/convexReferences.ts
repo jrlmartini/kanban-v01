@@ -1,15 +1,15 @@
-import { makeFunctionReference } from "convex/server";
+import { api } from "../../convex/_generated/api";
 
 export const tasksApi = {
-  list: makeFunctionReference<"query">("tasks:list"),
-  create: makeFunctionReference<"mutation">("tasks:create"),
-  update: makeFunctionReference<"mutation">("tasks:update"),
-  moveInKanban: makeFunctionReference<"mutation">("tasks:moveInKanban"),
-  plan: makeFunctionReference<"mutation">("tasks:plan"),
-  moveToWeek: makeFunctionReference<"mutation">("tasks:moveToWeek"),
-  moveToBacklog: makeFunctionReference<"mutation">("tasks:moveToBacklog"),
-  complete: makeFunctionReference<"mutation">("tasks:complete"),
-  archive: makeFunctionReference<"mutation">("tasks:archive"),
-  restore: makeFunctionReference<"mutation">("tasks:restore"),
-  restoreSnapshot: makeFunctionReference<"mutation">("tasks:restoreSnapshot"),
+  list: api.tasks.list,
+  create: api.tasks.create,
+  update: api.tasks.update,
+  moveInKanban: api.tasks.moveInKanban,
+  plan: api.tasks.plan,
+  moveToWeek: api.tasks.moveToWeek,
+  moveToBacklog: api.tasks.moveToBacklog,
+  complete: api.tasks.complete,
+  archive: api.tasks.archive,
+  restore: api.tasks.restore,
+  restoreSnapshot: api.tasks.restoreSnapshot,
 };

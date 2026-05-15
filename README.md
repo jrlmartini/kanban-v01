@@ -35,7 +35,8 @@ Para Vercel:
 - framework: Vite;
 - build command: `npm run build`;
 - output directory: `dist`;
-- environment variable: `VITE_CONVEX_URL`.
+- environment variable: `VITE_CONVEX_URL`;
+- production Convex URL atual: `https://blessed-newt-736.convex.cloud`.
 
 ## Estrutura
 
