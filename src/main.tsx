@@ -12,7 +12,8 @@ import { filterTasks, getEffectiveStatus, getOperationalSummary, getTimingState,
 import type { Task, TaskActions, TaskDraft, TaskPriority, TaskStatus, TaskType, WeekDay, WorkflowStatus } from "./types";
 import "./styles.css";
 
-const convexUrl = import.meta.env.VITE_CONVEX_URL as string | undefined;
+const productionConvexUrl = "https://blessed-newt-736.convex.cloud";
+const convexUrl = (import.meta.env.VITE_CONVEX_URL as string | undefined) || productionConvexUrl;
 const filtersStorageKey = "focusflow.filters";
 const eInkPresetStorageKey = "focusflow.einkPreset";
 
