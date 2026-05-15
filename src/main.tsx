@@ -13,7 +13,9 @@ import type { Task, TaskActions, TaskDraft, TaskPriority, TaskStatus, TaskType, 
 import "./styles.css";
 
 const productionConvexUrl = "https://blessed-newt-736.convex.cloud";
-const convexUrl = (import.meta.env.VITE_CONVEX_URL as string | undefined) || productionConvexUrl;
+const convexUrl = ((import.meta.env.VITE_CONVEX_URL as string | undefined)?.trim() || productionConvexUrl).replace(/\/$/, "");
+const convexHost = getConvexHost(convexUrl);
+const convexEnvironmentLabel = convexHost === "blessed-newt-736.convex.cloud" ? "prod" : convexHost === "brave-cricket-116.convex.cloud" ? "dev" : "cloud";
 const filtersStorageKey = "focusflow.filters";
 const eInkPresetStorageKey = "focusflow.einkPreset";
 
@@ -63,6 +65,14 @@ const kanbanColumns: Array<{ status: WorkflowStatus; label: string; hint: string
   { status: "delegated", label: "Delegadas", hint: "Aguardando retorno" },
   { status: "done", label: "Concluídas", hint: "Feitas nesta semana" },
 ];
+
+function getConvexHost(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
 
 function ConvexApp() {
   const tasks = (useQuery(tasksApi.list) as Task[] | undefined) ?? [];
@@ -127,7 +137,7 @@ function ConvexApp() {
     [archive, complete, create, moveInKanban, moveToBacklog, moveToWeek, plan, restore, restoreSnapshot, update],
   );
 
-  return <PlannerApp actions={actions} isConvexReady={Boolean(convexUrl)} tasks={tasks} />;
+  return <PlannerApp actions={actions} convexEnvironmentLabel={convexEnvironmentLabel} convexHost={convexHost} isConvexReady={Boolean(convexUrl)} tasks={tasks} />;
 }
 
 function LocalApp() {
@@ -138,10 +148,22 @@ function LocalApp() {
     saveLocalTasks(tasks);
   }, [tasks]);
 
-  return <PlannerApp actions={actions} isConvexReady={false} tasks={tasks} />;
+  return <PlannerApp actions={actions} convexEnvironmentLabel="" convexHost="" isConvexReady={false} tasks={tasks} />;
 }
 
-function PlannerApp({ tasks, actions, isConvexReady }: { tasks: Task[]; actions: TaskActions; isConvexReady: boolean }) {
+function PlannerApp({
+  tasks,
+  actions,
+  convexEnvironmentLabel,
+  convexHost,
+  isConvexReady,
+}: {
+  tasks: Task[];
+  actions: TaskActions;
+  convexEnvironmentLabel: string;
+  convexHost: string;
+  isConvexReady: boolean;
+}) {
   const [view, setView] = useState<"week" | "kanban">("kanban");
   const [kanbanScope, setKanbanScope] = useState<"week" | "all">("week");
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
@@ -237,9 +259,12 @@ function PlannerApp({ tasks, actions, isConvexReady }: { tasks: Task[]; actions:
           <p className="topbar-copy">Semana em curso.</p>
         </div>
         <div className="topbar-actions">
-          <span className={`sync-pill ${isConvexReady ? "live" : ""}`} title={isConvexReady ? "Dados conectados ao Convex" : "Modo local temporário até conectar o Convex"}>
+          <span
+            className={`sync-pill ${isConvexReady ? "live" : ""}`}
+            title={isConvexReady ? `Dados conectados ao Convex: ${convexHost}` : "Modo local temporário até conectar o Convex"}
+          >
             <Sparkles size={12} />
-            {isConvexReady ? "Convex" : "Local"}
+            {isConvexReady ? `Convex ${convexEnvironmentLabel}` : "Local"}
           </span>
           <Button className={`icon-toggle ${isEInk ? "active" : ""}`} onClick={() => setIsEInk((value) => !value)} size="icon" title="Alternar e-ink" variant="icon">
             <Eye size={14} />
