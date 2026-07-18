@@ -39,6 +39,30 @@ export const taskImpact = v.union(
   v.literal("maintenance"),
 );
 
+export const projectFront = v.union(
+  v.literal("conatus"),
+  v.literal("iara"),
+  v.literal("agro"),
+  v.literal("fontes-verdes"),
+  v.literal("launchpad"),
+  v.literal("pessoal"),
+  v.literal("outro"),
+);
+
+export const projectStage = v.union(
+  v.literal("exploring"),
+  v.literal("active"),
+  v.literal("waiting"),
+  v.literal("parked"),
+);
+
+export const ideaVerdict = v.union(
+  v.literal("now"),
+  v.literal("later"),
+  v.literal("incubate"),
+  v.literal("discard"),
+);
+
 export default defineSchema({
   tasks: defineTable({
     title: v.string(),
@@ -49,6 +73,7 @@ export default defineSchema({
     priority: v.optional(taskPriority),
     plannedWeek: v.optional(v.string()),
     plannedDay: v.optional(v.string()),
+    projectId: v.optional(v.id("projects")),
     impact: v.optional(taskImpact),
     waitingKind: v.optional(waitingKind),
     delegatedTo: v.optional(v.string()),
@@ -65,4 +90,46 @@ export default defineSchema({
     .index("by_planned_day", ["plannedDay"])
     .index("by_completed_at", ["completedAt"])
     .index("by_archived_at", ["archivedAt"]),
+
+  projects: defineTable({
+    name: v.string(),
+    front: projectFront,
+    objective: v.optional(v.string()),
+    owner: v.optional(v.string()),
+    stage: projectStage,
+    nextMilestone: v.optional(v.string()),
+    nextMilestoneDate: v.optional(v.string()),
+    nextStep: v.optional(v.string()),
+    blockedNote: v.optional(v.string()),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_stage", ["stage"]),
+
+  decisions: defineTable({
+    title: v.string(),
+    context: v.optional(v.string()),
+    options: v.optional(v.string()),
+    recommendation: v.optional(v.string()),
+    dueDate: v.optional(v.string()),
+    blocksWho: v.optional(v.string()),
+    projectId: v.optional(v.id("projects")),
+    decidedAt: v.optional(v.number()),
+    outcome: v.optional(v.string()),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_decided_at", ["decidedAt"]),
+
+  ideas: defineTable({
+    title: v.string(),
+    note: v.optional(v.string()),
+    front: v.optional(projectFront),
+    verdict: v.optional(ideaVerdict),
+    reviewedAt: v.optional(v.number()),
+    promotedTaskId: v.optional(v.id("tasks")),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }),
 });

@@ -1,15 +1,18 @@
 import { StrictMode, useEffect, useMemo, useState, type DragEvent, type MouseEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { ConvexProvider, ConvexReactClient, useMutation, useQuery } from "convex/react";
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Circle, Clock3, Eye, KanbanSquare, Loader2, Plus, Search, Sparkles, Sun, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Circle, Clock3, Eye, KanbanSquare, Loader2, Plus, Radar, Search, Sparkles, Sun, X } from "lucide-react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from "./components/ui/dialog";
-import { tasksApi } from "./lib/convexReferences";
+import { FieldPills } from "./components/field-pills";
+import { isDecisionUrgent, RadarView, type RadarTab } from "./components/RadarView";
+import { decisionsApi, ideasApi, projectsApi, tasksApi } from "./lib/convexReferences";
 import { createLocalActions, loadLocalTasks, saveLocalTasks } from "./lib/localTasks";
 import { addDays, getIsoWeek, getWeekDays, isTimestampInsideWeek, startOfWeek, toDateKey } from "./lib/dates";
+import { formatDateLabel } from "./lib/format";
 import { filterTasks, getEffectiveStatus, getOperationalSummary, getTimingState, getWaitingDays, isBacklogOverdue, isFollowUpDue, isTaskOverdue, type OperationalSummary } from "./lib/taskRules";
-import type { Task, TaskActions, TaskDraft, TaskImpact, TaskPriority, TaskStatus, TaskType, WaitingKind, WeekDay, WorkflowStatus } from "./types";
+import type { Decision, DecisionDraft, Idea, IdeaVerdict, Project, ProjectDraft, ProjectFront, RadarActions, Task, TaskActions, TaskDraft, TaskImpact, TaskPriority, TaskStatus, TaskType, WaitingKind, WeekDay, WorkflowStatus } from "./types";
 import "./styles.css";
 
 const productionConvexUrl = "https://blessed-newt-736.convex.cloud";
@@ -90,6 +93,9 @@ function getConvexHost(url: string) {
 
 function ConvexApp() {
   const tasks = (useQuery(tasksApi.list) as Task[] | undefined) ?? [];
+  const projects = (useQuery(projectsApi.list) as Project[] | undefined) ?? [];
+  const decisions = (useQuery(decisionsApi.list) as Decision[] | undefined) ?? [];
+  const ideas = (useQuery(ideasApi.list) as Idea[] | undefined) ?? [];
   const create = useMutation(tasksApi.create);
   const moveInKanban = useMutation(tasksApi.moveInKanban);
   const plan = useMutation(tasksApi.plan);
@@ -100,14 +106,68 @@ function ConvexApp() {
   const archive = useMutation(tasksApi.archive);
   const restore = useMutation(tasksApi.restore);
   const restoreSnapshot = useMutation(tasksApi.restoreSnapshot);
+  const projectCreate = useMutation(projectsApi.create);
+  const projectUpdate = useMutation(projectsApi.update);
+  const projectArchive = useMutation(projectsApi.archive);
+  const decisionCreate = useMutation(decisionsApi.create);
+  const decisionUpdate = useMutation(decisionsApi.update);
+  const decisionDecide = useMutation(decisionsApi.decide);
+  const decisionReopen = useMutation(decisionsApi.reopen);
+  const decisionArchive = useMutation(decisionsApi.archive);
+  const ideaCreate = useMutation(ideasApi.create);
+  const ideaSetVerdict = useMutation(ideasApi.setVerdict);
+  const ideaPromote = useMutation(ideasApi.promote);
+  const ideaArchive = useMutation(ideasApi.archive);
+
+  const radarActions: RadarActions = useMemo(
+    () => ({
+      async createProject(draft: ProjectDraft) {
+        await projectCreate(draft);
+      },
+      async updateProject(id: string, draft: ProjectDraft) {
+        await projectUpdate({ id: id as never, ...draft });
+      },
+      async archiveProject(id: string) {
+        await projectArchive({ id: id as never });
+      },
+      async createDecision(draft: DecisionDraft) {
+        await decisionCreate({ ...draft, projectId: draft.projectId as never });
+      },
+      async updateDecision(id: string, draft: DecisionDraft) {
+        await decisionUpdate({ id: id as never, ...draft, projectId: draft.projectId as never });
+      },
+      async decideDecision(id: string, outcome: string) {
+        await decisionDecide({ id: id as never, outcome });
+      },
+      async reopenDecision(id: string) {
+        await decisionReopen({ id: id as never });
+      },
+      async archiveDecision(id: string) {
+        await decisionArchive({ id: id as never });
+      },
+      async createIdea(title: string, note?: string, front?: ProjectFront) {
+        await ideaCreate({ title, note, front });
+      },
+      async setIdeaVerdict(id: string, verdict: IdeaVerdict) {
+        await ideaSetVerdict({ id: id as never, verdict });
+      },
+      async promoteIdea(id: string) {
+        await ideaPromote({ id: id as never });
+      },
+      async archiveIdea(id: string) {
+        await ideaArchive({ id: id as never });
+      },
+    }),
+    [decisionArchive, decisionCreate, decisionDecide, decisionReopen, decisionUpdate, ideaArchive, ideaCreate, ideaPromote, ideaSetVerdict, projectArchive, projectCreate, projectUpdate],
+  );
 
   const actions: TaskActions = useMemo(
     () => ({
       async createTask(draft) {
-        await create(draft);
+        await create({ ...draft, projectId: draft.projectId as never });
       },
       async updateTask(id, draft) {
-        await update({ id: id as never, ...draft });
+        await update({ id: id as never, ...draft, projectId: draft.projectId as never });
       },
       async moveInKanban(id, status, plannedWeek) {
         await moveInKanban({ id: id as never, status, plannedWeek });
@@ -141,6 +201,7 @@ function ConvexApp() {
           priority: snapshot.priority,
           plannedWeek: snapshot.plannedWeek,
           plannedDay: snapshot.plannedDay,
+          projectId: snapshot.projectId as never,
           impact: snapshot.impact,
           waitingKind: snapshot.waitingKind,
           delegatedTo: snapshot.delegatedTo,
@@ -156,7 +217,7 @@ function ConvexApp() {
     [archive, complete, create, moveInKanban, moveToBacklog, moveToWeek, plan, restore, restoreSnapshot, update],
   );
 
-  return <PlannerApp actions={actions} convexEnvironmentLabel={convexEnvironmentLabel} convexHost={convexHost} isConvexReady={Boolean(convexUrl)} tasks={tasks} />;
+  return <PlannerApp actions={actions} convexEnvironmentLabel={convexEnvironmentLabel} convexHost={convexHost} decisions={decisions} ideas={ideas} isConvexReady={Boolean(convexUrl)} projects={projects} radarActions={radarActions} tasks={tasks} />;
 }
 
 function LocalApp() {
@@ -167,7 +228,7 @@ function LocalApp() {
     saveLocalTasks(tasks);
   }, [tasks]);
 
-  return <PlannerApp actions={actions} convexEnvironmentLabel="" convexHost="" isConvexReady={false} tasks={tasks} />;
+  return <PlannerApp actions={actions} convexEnvironmentLabel="" convexHost="" decisions={[]} ideas={[]} isConvexReady={false} projects={[]} tasks={tasks} />;
 }
 
 function PlannerApp({
@@ -175,15 +236,24 @@ function PlannerApp({
   actions,
   convexEnvironmentLabel,
   convexHost,
+  decisions,
+  ideas,
   isConvexReady,
+  projects,
+  radarActions,
 }: {
   tasks: Task[];
   actions: TaskActions;
   convexEnvironmentLabel: string;
   convexHost: string;
+  decisions: Decision[];
+  ideas: Idea[];
   isConvexReady: boolean;
+  projects: Project[];
+  radarActions?: RadarActions;
 }) {
-  const [view, setView] = useState<"today" | "week" | "kanban">("today");
+  const [view, setView] = useState<"today" | "week" | "kanban" | "radar">("today");
+  const [radarTab, setRadarTab] = useState<RadarTab>("projects");
   const [kanbanScope, setKanbanScope] = useState<"week" | "all">("week");
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -295,8 +365,6 @@ function PlannerApp({
         </div>
       </section>
 
-      {view !== "today" ? <DashboardSummary actions={actions} onNotify={showNotice} onOpenTask={setModalTask} onPlanTask={setPlanningMove} summary={summary} /> : null}
-
       <section className="toolbar">
         <div className="toolbar-left">
           <div className="segmented" aria-label="Alternar visão">
@@ -308,6 +376,9 @@ function PlannerApp({
             </button>
             <button aria-pressed={view === "week"} className={view === "week" ? "active" : ""} onClick={() => setView("week")} type="button">
               <CalendarDays size={16} /> Semana
+            </button>
+            <button aria-pressed={view === "radar"} className={view === "radar" ? "active" : ""} onClick={() => setView("radar")} type="button">
+              <Radar size={16} /> Radar
             </button>
           </div>
           <div className={`segmented muted scope-control ${view === "kanban" ? "" : "placeholder"}`} aria-hidden={view !== "kanban"} aria-label="Escopo do Kanban">
@@ -376,9 +447,22 @@ function PlannerApp({
         />
       ) : null}
 
+      {view === "kanban" || view === "week" ? <DashboardSummary actions={actions} onNotify={showNotice} onOpenTask={setModalTask} onPlanTask={setPlanningMove} summary={summary} /> : null}
+
       {view === "today" ? (
         <section className="workspace today-workspace">
-          <TodayView actions={actions} onNotify={showNotice} onOpenTask={setModalTask} summary={summary} />
+          <TodayView
+            actions={actions}
+            decisions={decisions}
+            onNotify={showNotice}
+            onOpenDecisions={() => { setRadarTab("decisions"); setView("radar"); }}
+            onOpenTask={setModalTask}
+            summary={summary}
+          />
+        </section>
+      ) : view === "radar" ? (
+        <section className="workspace today-workspace">
+          <RadarView actions={radarActions} decisions={decisions} ideas={ideas} initialTab={radarTab} key={radarTab} onNotify={showNotice} projects={projects} tasks={tasks} />
         </section>
       ) : (
       <section className={`workspace ${view === "week" ? "week-workspace" : "kanban-workspace"} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -405,7 +489,7 @@ function PlannerApp({
 
       <ProgressStrip doneCount={doneThisWeek.length} overdueCount={summary.overdue.length} plannedCount={openThisWeekCount} />
       {notice ? <Toast notice={notice} onDismiss={() => setNotice(null)} /> : null}
-      {modalTask ? <TaskModal actions={actions} onClose={() => setModalTask(null)} onNotify={showNotice} task={modalTask} /> : null}
+      {modalTask ? <TaskModal actions={actions} onClose={() => setModalTask(null)} onNotify={showNotice} projects={projects} task={modalTask} /> : null}
       {planningMove ? (
         <PlanningDialog
           actions={actions}
@@ -568,10 +652,11 @@ function DashboardSummary({ actions, onNotify, onOpenTask, onPlanTask, summary }
   );
 }
 
-function TodayView({ actions, onNotify, onOpenTask, summary }: { actions: TaskActions; onNotify: (message: string, undo?: AppNotice["undo"]) => void; onOpenTask: (task: Task) => void; summary: OperationalSummary }) {
+function TodayView({ actions, decisions, onNotify, onOpenDecisions, onOpenTask, summary }: { actions: TaskActions; decisions: Decision[]; onNotify: (message: string, undo?: AppNotice["undo"]) => void; onOpenDecisions: () => void; onOpenTask: (task: Task) => void; summary: OperationalSummary }) {
   const [nowMs] = useState(() => Date.now());
   const todayKey = toDateKey(new Date(nowMs));
   const tomorrowKey = toDateKey(addDays(new Date(nowMs), 1));
+  const urgentDecisions = decisions.filter((decision) => isDecisionUrgent(decision, todayKey));
   const focus = summary.doing;
   const todayTasks = summary.today.filter((task) => getEffectiveStatus(task) !== "doing");
   const attentionIds = new Set(summary.attention.map((task) => task._id));
@@ -606,6 +691,7 @@ function TodayView({ actions, onNotify, onOpenTask, summary }: { actions: TaskAc
         priority: task.priority,
         plannedDay: task.plannedDay,
         plannedWeek: task.plannedWeek,
+        projectId: task.projectId,
         impact: task.impact,
         waitingKind: task.waitingKind ?? "delegated",
         delegatedTo: task.delegatedTo,
@@ -677,11 +763,27 @@ function TodayView({ actions, onNotify, onOpenTask, summary }: { actions: TaskAc
       </div>
 
       <div className="today-col">
-        <section className={`today-block attention-block ${summary.attention.length ? "has-items" : ""}`} aria-label="Requer você">
+        <section className={`today-block attention-block ${summary.attention.length + urgentDecisions.length ? "has-items" : ""}`} aria-label="Requer você">
           <header className="today-block-header">
             <h2>Requer você</h2>
-            <strong>{summary.attention.length}</strong>
+            <strong>{summary.attention.length + urgentDecisions.length}</strong>
           </header>
+          {urgentDecisions.map((decision) => (
+            <article className="today-row decision-attention" key={decision._id}>
+              <button className="today-row-main" onClick={onOpenDecisions} type="button">
+                <span className="priority-dot priority-critical" />
+                <span className="today-row-title">{decision.title}</span>
+                <small className="attention-reason">
+                  Decisão
+                  {decision.blocksWho ? ` · bloqueia ${decision.blocksWho}` : ""}
+                  {decision.dueDate ? ` · prazo ${formatDateLabel(decision.dueDate)}` : ""}
+                </small>
+              </button>
+              <div className="today-row-actions">
+                <button onClick={onOpenDecisions} type="button">Decidir</button>
+              </div>
+            </article>
+          ))}
           {summary.attention.length ? (
             summary.attention.map((task) => (
               <article className="today-row" key={task._id}>
@@ -696,9 +798,9 @@ function TodayView({ actions, onNotify, onOpenTask, summary }: { actions: TaskAc
                 </div>
               </article>
             ))
-          ) : (
+          ) : !urgentDecisions.length ? (
             <p className="today-empty positive">Ninguém espera por você agora.</p>
-          )}
+          ) : null}
         </section>
 
         <section className={`today-block overdue-block ${overdueTasks.length ? "has-items" : ""}`} aria-label="Atrasadas">
@@ -1160,7 +1262,7 @@ function TaskCard({ task, actions, mode, onNotify, onOpenTask }: { task: Task; a
   );
 }
 
-function TaskModal({ actions, onClose, onNotify, task }: { actions: TaskActions; onClose: () => void; onNotify: (message: string, undo?: AppNotice["undo"]) => void; task: Task | "new" }) {
+function TaskModal({ actions, onClose, onNotify, projects, task }: { actions: TaskActions; onClose: () => void; onNotify: (message: string, undo?: AppNotice["undo"]) => void; projects: Project[]; task: Task | "new" }) {
   const existing = task === "new" ? null : task;
   const [title, setTitle] = useState(existing?.title ?? "");
   const [description, setDescription] = useState(existing?.description ?? "");
@@ -1170,6 +1272,7 @@ function TaskModal({ actions, onClose, onNotify, task }: { actions: TaskActions;
   const [priority, setPriority] = useState<TaskPriority>(existing?.priority ?? "normal");
   const [plannedDay, setPlannedDay] = useState(existing?.plannedDay ?? "");
   const [impact, setImpact] = useState<TaskImpact | "none">(existing?.impact ?? "none");
+  const [projectId, setProjectId] = useState(existing?.projectId ?? "");
   const [waitingKind, setWaitingKind] = useState<WaitingKind>(existing?.waitingKind ?? "delegated");
   const [delegatedTo, setDelegatedTo] = useState(existing?.delegatedTo ?? "");
   const [followUpAt, setFollowUpAt] = useState(existing?.followUpAt ?? "");
@@ -1191,6 +1294,7 @@ function TaskModal({ actions, onClose, onNotify, task }: { actions: TaskActions;
       status,
       title,
       type,
+      projectId: projectId || undefined,
       impact: impact === "none" ? undefined : impact,
       waitingKind: isDelegated ? waitingKind : undefined,
       delegatedTo: isDelegated ? delegatedTo || undefined : undefined,
@@ -1308,12 +1412,23 @@ function TaskModal({ actions, onClose, onNotify, task }: { actions: TaskActions;
           </div>
         ) : null}
 
-        <FieldPills<TaskImpact | "none">
-          label="Impacto"
-          onChange={setImpact}
-          options={[["none", "—"], ["cash", "Caixa"], ["asset", "Ativo"], ["unblock", "Destrava"], ["maintenance", "Manutenção"]]}
-          value={impact}
-        />
+        <div className="modal-grid">
+          <FieldPills<TaskImpact | "none">
+            label="Impacto"
+            onChange={setImpact}
+            options={[["none", "—"], ["cash", "Caixa"], ["asset", "Ativo"], ["unblock", "Destrava"], ["maintenance", "Manutenção"]]}
+            value={impact}
+          />
+          {projects.length ? (
+            <label>
+              Projeto
+              <select onChange={(event) => setProjectId(event.target.value)} value={projectId}>
+                <option value="">Sem projeto</option>
+                {projects.map((project) => <option key={project._id} value={project._id}>{project.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+        </div>
 
         <div className="date-row">
           <label>
@@ -1406,19 +1521,6 @@ function PlanningDialog({ actions, currentWeek, onClose, onNotify, targetStatus,
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function FieldPills<T extends string>({ label, onChange, options, value }: { label: string; onChange: (value: T) => void; options: Array<[T, string]>; value: T }) {
-  return (
-    <fieldset className="field-pills">
-      <legend>{label}</legend>
-      <div>
-        {options.map(([option, text]) => (
-          <button className={`${value === option ? "active" : ""} pill-${option}`} key={option} onClick={() => onChange(option)} type="button">{text}</button>
-        ))}
-      </div>
-    </fieldset>
   );
 }
 
@@ -1572,11 +1674,6 @@ function formatDay(date: string): string {
 function getDayChip(task: Task): string {
   if (task.plannedDay) return formatDay(task.plannedDay);
   return "Sem data";
-}
-
-function formatDateLabel(date: string): string {
-  const parsed = new Date(`${date}T12:00:00`);
-  return parsed.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
 }
 
 function formatDateRangeLabel(start: string, end: string): string {

@@ -13,3 +13,27 @@ export const tasksApi = {
   restore: api.tasks.restore,
   restoreSnapshot: api.tasks.restoreSnapshot,
 };
+
+export const projectsApi = {
+  list: api.projects.list,
+  create: api.projects.create,
+  update: api.projects.update,
+  archive: api.projects.archive,
+};
+
+export const decisionsApi = {
+  list: api.decisions.list,
+  create: api.decisions.create,
+  update: api.decisions.update,
+  decide: api.decisions.decide,
+  reopen: api.decisions.reopen,
+  archive: api.decisions.archive,
+};
+
+export const ideasApi = {
+  list: api.ideas.list,
+  create: api.ideas.create,
+  setVerdict: api.ideas.setVerdict,
+  promote: api.ideas.promote,
+  archive: api.ideas.archive,
+};

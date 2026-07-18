@@ -59,6 +59,7 @@ function normalizeTaskInput(args: {
 }
 
 const waitingFields = {
+  projectId: v.optional(v.id("projects")),
   impact: v.optional(taskImpact),
   waitingKind: v.optional(waitingKind),
   delegatedTo: optionalString,
@@ -92,6 +93,7 @@ export const create = mutation({
     return await ctx.db.insert("tasks", {
       ...normalized,
       title: normalized.title,
+      projectId: args.projectId,
       waitingSince: normalized.waitingKind ? now : undefined,
       sortOrder: now,
       createdAt: now,
@@ -122,6 +124,7 @@ export const update = mutation({
     if (!normalized.title) throw new Error("Task title is required.");
     await ctx.db.patch(id, {
       ...normalized,
+      projectId: patch.projectId,
       waitingSince: normalized.waitingKind ? task.waitingSince ?? now : undefined,
       completedAt: normalized.status === "done" ? task.completedAt ?? now : undefined,
       updatedAt: now,
