@@ -1,15 +1,15 @@
 import { StrictMode, useEffect, useMemo, useState, type DragEvent, type MouseEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { ConvexProvider, ConvexReactClient, useMutation, useQuery } from "convex/react";
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Circle, Clock3, Eye, KanbanSquare, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Circle, Clock3, Eye, KanbanSquare, Loader2, Plus, Search, Sparkles, Sun, X } from "lucide-react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from "./components/ui/dialog";
 import { tasksApi } from "./lib/convexReferences";
 import { createLocalActions, loadLocalTasks, saveLocalTasks } from "./lib/localTasks";
 import { addDays, getIsoWeek, getWeekDays, isTimestampInsideWeek, startOfWeek, toDateKey } from "./lib/dates";
-import { filterTasks, getEffectiveStatus, getOperationalSummary, getTimingState, isBacklogOverdue, isTaskOverdue, type OperationalSummary } from "./lib/taskRules";
-import type { Task, TaskActions, TaskDraft, TaskPriority, TaskStatus, TaskType, WeekDay, WorkflowStatus } from "./types";
+import { filterTasks, getEffectiveStatus, getOperationalSummary, getTimingState, getWaitingDays, isBacklogOverdue, isFollowUpDue, isTaskOverdue, type OperationalSummary } from "./lib/taskRules";
+import type { Task, TaskActions, TaskDraft, TaskImpact, TaskPriority, TaskStatus, TaskType, WaitingKind, WeekDay, WorkflowStatus } from "./types";
 import "./styles.css";
 
 const productionConvexUrl = "https://blessed-newt-736.convex.cloud";
@@ -57,6 +57,20 @@ const priorityLabels: Record<TaskPriority, string> = {
 const typeLabels: Record<TaskType, string> = {
   professional: "Profissional",
   personal: "Pessoal",
+};
+
+const waitingKindLabels: Record<WaitingKind, string> = {
+  delegated: "Delegada",
+  waiting: "Aguardando resposta",
+  blocked: "Bloqueada",
+  parked: "Estacionada",
+};
+
+const impactLabels: Record<TaskImpact, string> = {
+  cash: "Caixa",
+  asset: "Ativo estratégico",
+  unblock: "Destrava",
+  maintenance: "Manutenção",
 };
 
 const kanbanColumns: Array<{ status: WorkflowStatus; label: string; hint: string }> = [
@@ -127,6 +141,11 @@ function ConvexApp() {
           priority: snapshot.priority,
           plannedWeek: snapshot.plannedWeek,
           plannedDay: snapshot.plannedDay,
+          impact: snapshot.impact,
+          waitingKind: snapshot.waitingKind,
+          delegatedTo: snapshot.delegatedTo,
+          followUpAt: snapshot.followUpAt,
+          waitingSince: snapshot.waitingSince,
           sortOrder: snapshot.sortOrder,
           createdAt: snapshot.createdAt,
           completedAt: snapshot.completedAt,
@@ -164,7 +183,7 @@ function PlannerApp({
   convexHost: string;
   isConvexReady: boolean;
 }) {
-  const [view, setView] = useState<"week" | "kanban">("kanban");
+  const [view, setView] = useState<"today" | "week" | "kanban">("today");
   const [kanbanScope, setKanbanScope] = useState<"week" | "all">("week");
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -276,11 +295,14 @@ function PlannerApp({
         </div>
       </section>
 
-      <DashboardSummary actions={actions} onNotify={showNotice} onOpenTask={setModalTask} onPlanTask={setPlanningMove} summary={summary} />
+      {view !== "today" ? <DashboardSummary actions={actions} onNotify={showNotice} onOpenTask={setModalTask} onPlanTask={setPlanningMove} summary={summary} /> : null}
 
       <section className="toolbar">
         <div className="toolbar-left">
           <div className="segmented" aria-label="Alternar visão">
+            <button aria-pressed={view === "today"} className={view === "today" ? "active" : ""} onClick={() => setView("today")} type="button">
+              <Sun size={16} /> Hoje
+            </button>
             <button aria-pressed={view === "kanban"} className={view === "kanban" ? "active" : ""} onClick={() => setView("kanban")} type="button">
               <KanbanSquare size={16} /> Kanban
             </button>
@@ -354,6 +376,11 @@ function PlannerApp({
         />
       ) : null}
 
+      {view === "today" ? (
+        <section className="workspace today-workspace">
+          <TodayView actions={actions} onNotify={showNotice} onOpenTask={setModalTask} summary={summary} />
+        </section>
+      ) : (
       <section className={`workspace ${view === "week" ? "week-workspace" : "kanban-workspace"} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
         <BacklogSidebar
           actions={actions}
@@ -374,6 +401,7 @@ function PlannerApp({
           )}
         </div>
       </section>
+      )}
 
       <ProgressStrip doneCount={doneThisWeek.length} overdueCount={summary.overdue.length} plannedCount={openThisWeekCount} />
       {notice ? <Toast notice={notice} onDismiss={() => setNotice(null)} /> : null}
@@ -537,6 +565,201 @@ function DashboardSummary({ actions, onNotify, onOpenTask, onPlanTask, summary }
         })}
       </div>
     </section>
+  );
+}
+
+function TodayView({ actions, onNotify, onOpenTask, summary }: { actions: TaskActions; onNotify: (message: string, undo?: AppNotice["undo"]) => void; onOpenTask: (task: Task) => void; summary: OperationalSummary }) {
+  const [nowMs] = useState(() => Date.now());
+  const todayKey = toDateKey(new Date(nowMs));
+  const tomorrowKey = toDateKey(addDays(new Date(nowMs), 1));
+  const focus = summary.doing;
+  const todayTasks = summary.today.filter((task) => getEffectiveStatus(task) !== "doing");
+  const attentionIds = new Set(summary.attention.map((task) => task._id));
+  const overdueTasks = summary.overdue.filter((task) => !attentionIds.has(task._id));
+  const waitingTasks = summary.delegated;
+
+  async function replan(task: Task, date: string | null, message: string) {
+    const previous = task;
+    try {
+      if (date) {
+        await actions.planTask(task._id, date, getEffectiveStatus(task) === "delegated" ? "delegated" : "planned");
+      } else {
+        await actions.moveToBacklog(task._id);
+      }
+      onNotify(message, () => actions.restoreSnapshot(previous));
+    } catch (error) {
+      onNotify(formatActionError(error));
+    }
+  }
+
+  async function bumpFollowUp(task: Task, days: number) {
+    const previous = task;
+    const base = task.followUpAt && task.followUpAt > todayKey ? task.followUpAt : todayKey;
+    const nextFollowUp = toDateKey(addDays(new Date(`${base}T12:00:00`), days));
+    try {
+      await actions.updateTask(task._id, {
+        title: task.title,
+        description: task.description,
+        nextStep: task.nextStep,
+        type: task.type,
+        status: task.status,
+        priority: task.priority,
+        plannedDay: task.plannedDay,
+        plannedWeek: task.plannedWeek,
+        impact: task.impact,
+        waitingKind: task.waitingKind ?? "delegated",
+        delegatedTo: task.delegatedTo,
+        followUpAt: nextFollowUp,
+      });
+      onNotify(`Follow-up adiado para ${formatDateLabel(nextFollowUp)}.`, () => actions.restoreSnapshot(previous));
+    } catch (error) {
+      onNotify(formatActionError(error));
+    }
+  }
+
+  function getAttentionReason(task: Task): string {
+    if (isFollowUpDue(task, todayKey)) return task.delegatedTo ? `Cobrar ${task.delegatedTo}` : "Follow-up vencido";
+    if (task.waitingKind === "blocked") return "Bloqueada";
+    return "P1 atrasada";
+  }
+
+  return (
+    <div className="today-view">
+      <div className="today-col">
+        <section className="today-block focus-block" aria-label="Foco agora">
+          <header className="today-block-header">
+            <h2>Foco agora</h2>
+            <strong>{focus.length}</strong>
+          </header>
+          {focus.length ? (
+            focus.map((task, index) => (
+              <article className={`focus-card ${index === 0 ? "primary" : ""}`} key={task._id} onClick={() => onOpenTask(task)}>
+                <div className="card-meta-row">
+                  <span className={`priority-dot priority-${task.priority ?? "normal"}`} />
+                  <span className="focus-chip">Em andamento</span>
+                </div>
+                <h3>{task.title}</h3>
+                {task.nextStep ? <p className="focus-next-step">→ {task.nextStep}</p> : <p className="focus-next-step muted">Sem próximo passo definido — defina um.</p>}
+                <div className="today-row-actions">
+                  <button onClick={(event) => { void runCardAction(event, task, onNotify, () => actions.completeTask(task._id), "Atividade concluída.", actions); }} type="button">Concluir</button>
+                </div>
+              </article>
+            ))
+          ) : (
+            <p className="today-empty">Nada em execução. Escolha a âncora do dia na lista de hoje.</p>
+          )}
+          {focus.length > 2 ? <p className="today-hint">Mais de 2 em andamento: considere devolver algo para o planejado.</p> : null}
+        </section>
+
+        <section className="today-block" aria-label="Planejado para hoje">
+          <header className="today-block-header">
+            <h2>Hoje</h2>
+            <strong>{todayTasks.length}</strong>
+          </header>
+          {todayTasks.length ? (
+            todayTasks.map((task) => (
+              <article className="today-row" key={task._id}>
+                <button className="today-row-main" onClick={() => onOpenTask(task)} type="button">
+                  <span className={`priority-dot priority-${task.priority ?? "normal"}`} />
+                  <span className="today-row-title">{task.title}</span>
+                  {task.impact ? <small>{impactLabels[task.impact]}</small> : null}
+                </button>
+                <div className="today-row-actions">
+                  <button onClick={(event) => { void runCardAction(event, task, onNotify, () => actions.moveInKanban(task._id, "doing", task.plannedWeek ?? getIsoWeek(new Date())), "Movida para em andamento.", actions); }} type="button">Iniciar</button>
+                  <button onClick={(event) => { void runCardAction(event, task, onNotify, () => actions.completeTask(task._id), "Atividade concluída.", actions); }} type="button">Concluir</button>
+                </div>
+              </article>
+            ))
+          ) : (
+            <p className="today-empty">{focus.length ? "Todo o resto do dia está livre." : "Dia sem plano. Puxe algo do backlog ou da semana."}</p>
+          )}
+        </section>
+      </div>
+
+      <div className="today-col">
+        <section className={`today-block attention-block ${summary.attention.length ? "has-items" : ""}`} aria-label="Requer você">
+          <header className="today-block-header">
+            <h2>Requer você</h2>
+            <strong>{summary.attention.length}</strong>
+          </header>
+          {summary.attention.length ? (
+            summary.attention.map((task) => (
+              <article className="today-row" key={task._id}>
+                <button className="today-row-main" onClick={() => onOpenTask(task)} type="button">
+                  <span className={`priority-dot priority-${task.priority ?? "normal"}`} />
+                  <span className="today-row-title">{task.title}</span>
+                  <small className="attention-reason">{getAttentionReason(task)}</small>
+                </button>
+                <div className="today-row-actions">
+                  {task.followUpAt ? <button onClick={(event) => { event.stopPropagation(); void bumpFollowUp(task, 2); }} type="button">+2d</button> : null}
+                  <button onClick={(event) => { void runCardAction(event, task, onNotify, () => actions.completeTask(task._id), "Atividade concluída.", actions); }} type="button">Concluir</button>
+                </div>
+              </article>
+            ))
+          ) : (
+            <p className="today-empty positive">Ninguém espera por você agora.</p>
+          )}
+        </section>
+
+        <section className={`today-block overdue-block ${overdueTasks.length ? "has-items" : ""}`} aria-label="Atrasadas">
+          <header className="today-block-header">
+            <h2>Atrasadas</h2>
+            <strong>{overdueTasks.length}</strong>
+          </header>
+          {overdueTasks.length ? (
+            overdueTasks.map((task) => (
+              <article className="today-row" key={task._id}>
+                <button className="today-row-main" onClick={() => onOpenTask(task)} type="button">
+                  <span className={`priority-dot priority-${task.priority ?? "normal"}`} />
+                  <span className="today-row-title">{task.title}</span>
+                  <small>{task.plannedDay ? formatDateLabel(task.plannedDay) : ""}</small>
+                </button>
+                <div className="today-row-actions replan-actions">
+                  <button onClick={(event) => { event.stopPropagation(); void replan(task, todayKey, "Reprogramada para hoje."); }} type="button">Hoje</button>
+                  <button onClick={(event) => { event.stopPropagation(); void replan(task, tomorrowKey, "Reprogramada para amanhã."); }} type="button">Amanhã</button>
+                  <button onClick={(event) => { event.stopPropagation(); void replan(task, null, "Voltou ao backlog."); }} type="button">Backlog</button>
+                </div>
+              </article>
+            ))
+          ) : (
+            <p className="today-empty positive">Sem atrasos. Semana limpa.</p>
+          )}
+        </section>
+
+        <section className="today-block" aria-label="Delegadas e aguardando">
+          <header className="today-block-header">
+            <h2>Delegadas &amp; aguardando</h2>
+            <strong>{waitingTasks.length}</strong>
+          </header>
+          {waitingTasks.length ? (
+            waitingTasks.map((task) => {
+              const days = getWaitingDays(task, nowMs);
+              const due = isFollowUpDue(task, todayKey);
+              return (
+                <article className="today-row" key={task._id}>
+                  <button className="today-row-main" onClick={() => onOpenTask(task)} type="button">
+                    <span className={`priority-dot priority-${task.priority ?? "normal"}`} />
+                    <span className="today-row-title">{task.title}</span>
+                    <small className={due ? "attention-reason" : ""}>
+                      {waitingKindLabels[task.waitingKind ?? "delegated"]}
+                      {task.delegatedTo ? ` · ${task.delegatedTo}` : ""}
+                      {task.waitingSince ? ` · há ${days}d` : ""}
+                      {task.followUpAt ? ` · cobrar ${formatDateLabel(task.followUpAt)}` : " · sem follow-up"}
+                    </small>
+                  </button>
+                  <div className="today-row-actions">
+                    <button onClick={(event) => { event.stopPropagation(); void bumpFollowUp(task, 2); }} type="button">+2d</button>
+                    <button onClick={(event) => { void runCardAction(event, task, onNotify, () => actions.completeTask(task._id), "Atividade concluída.", actions); }} type="button">Concluir</button>
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            <p className="today-empty">Nada delegado ou em espera.</p>
+          )}
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -946,13 +1169,19 @@ function TaskModal({ actions, onClose, onNotify, task }: { actions: TaskActions;
   const [status, setStatus] = useState<TaskStatus>(existing?.status ?? "backlog");
   const [priority, setPriority] = useState<TaskPriority>(existing?.priority ?? "normal");
   const [plannedDay, setPlannedDay] = useState(existing?.plannedDay ?? "");
+  const [impact, setImpact] = useState<TaskImpact | "none">(existing?.impact ?? "none");
+  const [waitingKind, setWaitingKind] = useState<WaitingKind>(existing?.waitingKind ?? "delegated");
+  const [delegatedTo, setDelegatedTo] = useState(existing?.delegatedTo ?? "");
+  const [followUpAt, setFollowUpAt] = useState(existing?.followUpAt ?? "");
   const [pending, setPending] = useState(false);
 
   const plannedWeek = plannedDay ? getIsoWeek(new Date(`${plannedDay}T12:00:00`)) : undefined;
   const isScheduled = Boolean(plannedDay);
+  const isDelegated = status === "delegated";
+  const followUpMissing = isDelegated && (waitingKind === "delegated" || waitingKind === "waiting") && !followUpAt;
 
   async function save() {
-    if (!title.trim() || pending) return;
+    if (!title.trim() || pending || followUpMissing) return;
     const draft: TaskDraft = {
       description,
       nextStep,
@@ -962,6 +1191,10 @@ function TaskModal({ actions, onClose, onNotify, task }: { actions: TaskActions;
       status,
       title,
       type,
+      impact: impact === "none" ? undefined : impact,
+      waitingKind: isDelegated ? waitingKind : undefined,
+      delegatedTo: isDelegated ? delegatedTo || undefined : undefined,
+      followUpAt: isDelegated ? followUpAt || undefined : undefined,
     };
     setPending(true);
     try {
@@ -1054,6 +1287,34 @@ function TaskModal({ actions, onClose, onNotify, task }: { actions: TaskActions;
           value={status}
         />
 
+        {isDelegated ? (
+          <div className="delegation-fields">
+            <FieldPills<WaitingKind>
+              label="Tipo de espera"
+              onChange={setWaitingKind}
+              options={[["delegated", "Delegada"], ["waiting", "Aguardando"], ["blocked", "Bloqueada"], ["parked", "Estacionada"]]}
+              value={waitingKind}
+            />
+            <div className="modal-grid">
+              <label>
+                Delegada para / aguardando
+                <input onChange={(event) => setDelegatedTo(event.target.value)} placeholder="Ex.: João" value={delegatedTo} />
+              </label>
+              <label>
+                Cobrar em {followUpMissing ? <em className="field-required">obrigatório</em> : null}
+                <input onChange={(event) => setFollowUpAt(event.target.value)} type="date" value={followUpAt} />
+              </label>
+            </div>
+          </div>
+        ) : null}
+
+        <FieldPills<TaskImpact | "none">
+          label="Impacto"
+          onChange={setImpact}
+          options={[["none", "—"], ["cash", "Caixa"], ["asset", "Ativo"], ["unblock", "Destrava"], ["maintenance", "Manutenção"]]}
+          value={impact}
+        />
+
         <div className="date-row">
           <label>
             Data
@@ -1081,7 +1342,7 @@ function TaskModal({ actions, onClose, onNotify, task }: { actions: TaskActions;
           </div>
           <div>
             <Button disabled={pending} onClick={onClose} variant="secondary">Cancelar</Button>
-            <Button disabled={pending || !title.trim()} onClick={save} variant="primary">{pending ? "Salvando" : existing ? "Salvar" : "Criar"}</Button>
+            <Button disabled={pending || !title.trim() || followUpMissing} onClick={save} title={followUpMissing ? "Delegação exige data de cobrança." : undefined} variant="primary">{pending ? "Salvando" : existing ? "Salvar" : "Criar"}</Button>
           </div>
         </DialogFooter>
       </DialogContent>

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { taskPriority, taskStatus, taskType, workflowStatus } from "./schema";
+import { taskImpact, taskPriority, taskStatus, taskType, waitingKind, workflowStatus } from "./schema";
 
 const optionalString = v.optional(v.string());
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -32,9 +32,15 @@ function normalizeTaskInput(args: {
   priority?: "low" | "normal" | "high" | "critical";
   plannedWeek?: string;
   plannedDay?: string;
+  impact?: "cash" | "asset" | "unblock" | "maintenance";
+  waitingKind?: "delegated" | "waiting" | "blocked" | "parked";
+  delegatedTo?: string;
+  followUpAt?: string;
 }) {
   const hasDate = Boolean(args.plannedDay);
   const plannedWeek = args.plannedDay ? getIsoWeek(args.plannedDay) : undefined;
+  const status = resolveInputStatus(args.plannedDay, args.status);
+  const isWaiting = status === "delegated" || Boolean(args.waitingKind);
 
   return {
     title: args.title?.trim(),
@@ -42,11 +48,22 @@ function normalizeTaskInput(args: {
     nextStep: args.nextStep?.trim() || undefined,
     type: args.type ?? "professional",
     priority: args.priority ?? "normal",
-    status: resolveInputStatus(args.plannedDay, args.status),
+    status,
     plannedWeek: hasDate ? plannedWeek : undefined,
     plannedDay: hasDate ? args.plannedDay : undefined,
+    impact: args.impact,
+    waitingKind: isWaiting ? (args.waitingKind ?? (status === "delegated" ? ("delegated" as const) : undefined)) : undefined,
+    delegatedTo: isWaiting ? args.delegatedTo?.trim() || undefined : undefined,
+    followUpAt: isWaiting ? args.followUpAt || undefined : undefined,
   };
 }
+
+const waitingFields = {
+  impact: v.optional(taskImpact),
+  waitingKind: v.optional(waitingKind),
+  delegatedTo: optionalString,
+  followUpAt: optionalString,
+};
 
 export const list = query({
   args: {},
@@ -66,6 +83,7 @@ export const create = mutation({
     priority: v.optional(taskPriority),
     plannedWeek: optionalString,
     plannedDay: optionalString,
+    ...waitingFields,
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -74,6 +92,7 @@ export const create = mutation({
     return await ctx.db.insert("tasks", {
       ...normalized,
       title: normalized.title,
+      waitingSince: normalized.waitingKind ? now : undefined,
       sortOrder: now,
       createdAt: now,
       updatedAt: now,
@@ -92,6 +111,7 @@ export const update = mutation({
     priority: v.optional(taskPriority),
     plannedWeek: optionalString,
     plannedDay: optionalString,
+    ...waitingFields,
   },
   handler: async (ctx, args) => {
     const { id, ...patch } = args;
@@ -102,6 +122,7 @@ export const update = mutation({
     if (!normalized.title) throw new Error("Task title is required.");
     await ctx.db.patch(id, {
       ...normalized,
+      waitingSince: normalized.waitingKind ? task.waitingSince ?? now : undefined,
       completedAt: normalized.status === "done" ? task.completedAt ?? now : undefined,
       updatedAt: now,
     });
@@ -147,7 +168,12 @@ export const moveInKanban = mutation({
       patch.completedAt = undefined;
     }
 
-    await ctx.db.patch(args.id, patch);
+    await ctx.db.patch(args.id, {
+      ...patch,
+      ...(args.status === "delegated"
+        ? { waitingKind: task.waitingKind ?? ("delegated" as const), waitingSince: task.waitingSince ?? now }
+        : { waitingKind: undefined, delegatedTo: undefined, followUpAt: undefined, waitingSince: undefined }),
+    });
   },
 });
 
@@ -166,6 +192,9 @@ export const plan = mutation({
       plannedWeek: getIsoWeek(args.plannedDay),
       plannedDay: args.plannedDay,
       completedAt: args.status === "done" ? task.completedAt ?? now : undefined,
+      ...(args.status === "delegated"
+        ? { waitingKind: task.waitingKind ?? ("delegated" as const), waitingSince: task.waitingSince ?? now }
+        : { waitingKind: undefined, delegatedTo: undefined, followUpAt: undefined, waitingSince: undefined }),
       updatedAt: now,
     });
   },
@@ -202,6 +231,10 @@ export const moveToBacklog = mutation({
       plannedWeek: undefined,
       plannedDay: undefined,
       completedAt: undefined,
+      waitingKind: undefined,
+      delegatedTo: undefined,
+      followUpAt: undefined,
+      waitingSince: undefined,
       updatedAt: Date.now(),
     });
   },
@@ -224,6 +257,10 @@ export const complete = mutation({
     await ctx.db.patch(args.id, {
       status: "done",
       completedAt: task.completedAt ?? now,
+      waitingKind: undefined,
+      delegatedTo: undefined,
+      followUpAt: undefined,
+      waitingSince: undefined,
       updatedAt: now,
     });
   },
@@ -265,6 +302,8 @@ export const restoreSnapshot = mutation({
     priority: v.optional(taskPriority),
     plannedWeek: optionalString,
     plannedDay: optionalString,
+    ...waitingFields,
+    waitingSince: v.optional(v.number()),
     sortOrder: v.number(),
     createdAt: v.number(),
     completedAt: v.optional(v.number()),

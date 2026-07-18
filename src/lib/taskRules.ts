@@ -9,8 +9,10 @@ export type TaskFilters = {
 };
 
 export type OperationalSummary = {
+  attention: Task[];
   backlog: Task[];
   delegated: Task[];
+  doing: Task[];
   next14: Task[];
   outsideCount: number;
   overdue: Task[];
@@ -69,19 +71,45 @@ export function isCockpitRelevant(task: Task, today: string): boolean {
   return status === "backlog";
 }
 
+export function isFollowUpDue(task: Task, today: string): boolean {
+  if (getEffectiveStatus(task) === "done") return false;
+  if (!task.followUpAt) return false;
+  return task.followUpAt <= today;
+}
+
+export function getWaitingDays(task: Task, now: number): number {
+  if (!task.waitingSince) return 0;
+  return Math.max(0, Math.floor((now - task.waitingSince) / (24 * 60 * 60 * 1000)));
+}
+
+export function requiresMyAttention(task: Task, today: string): boolean {
+  const status = getEffectiveStatus(task);
+  if (status === "done") return false;
+  if (isFollowUpDue(task, today)) return true;
+  if (task.waitingKind === "blocked") return true;
+  if (task.priority === "critical" && isTaskOverdue(task, today)) return true;
+  return false;
+}
+
 export function getOperationalSummary(tasks: Task[]): OperationalSummary {
   const today = toDateKey(new Date());
   const nextLimit = toDateKey(addDays(new Date(), 14));
   const pending = tasks.filter((task) => getEffectiveStatus(task) !== "done");
   const overdue = pending.filter((task) => isTaskOverdue(task, today));
   const todayTasks = pending.filter((task) => task.plannedDay === today);
-  const delegated = pending.filter((task) => task.status === "delegated");
+  const delegated = pending
+    .filter((task) => task.status === "delegated" || task.waitingKind)
+    .sort((a, b) => (a.followUpAt ?? "9999").localeCompare(b.followUpAt ?? "9999"));
+  const doing = pending.filter((task) => getEffectiveStatus(task) === "doing");
   const next14 = pending.filter((task) => task.plannedDay && task.plannedDay > today && task.plannedDay <= nextLimit && !isTaskOverdue(task, today));
   const backlog = pending.filter((task) => !task.plannedDay);
   const relevant = pending.filter((task) => isCockpitRelevant(task, today));
+  const attention = pending.filter((task) => requiresMyAttention(task, today));
 
   return {
+    attention,
     backlog,
+    doing,
     delegated,
     next14,
     outsideCount: pending.length - relevant.length,

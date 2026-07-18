@@ -3,6 +3,8 @@ export type WorkflowStatus = Exclude<TaskStatus, "backlog">;
 
 export type TaskPriority = "low" | "normal" | "high" | "critical";
 export type TaskType = "professional" | "personal";
+export type WaitingKind = "delegated" | "waiting" | "blocked" | "parked";
+export type TaskImpact = "cash" | "asset" | "unblock" | "maintenance";
 
 export type Task = {
   _id: string;
@@ -14,6 +16,11 @@ export type Task = {
   priority?: TaskPriority;
   plannedWeek?: string;
   plannedDay?: string;
+  impact?: TaskImpact;
+  waitingKind?: WaitingKind;
+  delegatedTo?: string;
+  followUpAt?: string;
+  waitingSince?: number;
   sortOrder: number;
   createdAt: number;
   updatedAt: number;
@@ -30,6 +37,10 @@ export type TaskDraft = {
   priority?: TaskPriority;
   plannedWeek?: string;
   plannedDay?: string;
+  impact?: TaskImpact;
+  waitingKind?: WaitingKind;
+  delegatedTo?: string;
+  followUpAt?: string;
 };
 
 export type WeekDay = {

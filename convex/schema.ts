@@ -25,6 +25,20 @@ export const taskPriority = v.union(
 
 export const taskType = v.union(v.literal("professional"), v.literal("personal"));
 
+export const waitingKind = v.union(
+  v.literal("delegated"),
+  v.literal("waiting"),
+  v.literal("blocked"),
+  v.literal("parked"),
+);
+
+export const taskImpact = v.union(
+  v.literal("cash"),
+  v.literal("asset"),
+  v.literal("unblock"),
+  v.literal("maintenance"),
+);
+
 export default defineSchema({
   tasks: defineTable({
     title: v.string(),
@@ -35,6 +49,11 @@ export default defineSchema({
     priority: v.optional(taskPriority),
     plannedWeek: v.optional(v.string()),
     plannedDay: v.optional(v.string()),
+    impact: v.optional(taskImpact),
+    waitingKind: v.optional(waitingKind),
+    delegatedTo: v.optional(v.string()),
+    followUpAt: v.optional(v.string()),
+    waitingSince: v.optional(v.number()),
     sortOrder: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),

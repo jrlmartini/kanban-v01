@@ -62,6 +62,8 @@ function resolveDraftStatus(draft: TaskDraft, fallbackStatus: TaskStatus): TaskS
 function normalizeDraft(draft: TaskDraft, fallbackStatus: TaskStatus = "planned") {
   const hasDate = Boolean(draft.plannedDay);
   const plannedWeek = draft.plannedDay ? getIsoWeek(new Date(`${draft.plannedDay}T12:00:00`)) : undefined;
+  const status = resolveDraftStatus(draft, fallbackStatus);
+  const isWaiting = status === "delegated" || Boolean(draft.waitingKind);
 
   return {
     title: draft.title.trim(),
@@ -69,9 +71,13 @@ function normalizeDraft(draft: TaskDraft, fallbackStatus: TaskStatus = "planned"
     nextStep: draft.nextStep?.trim() || undefined,
     type: draft.type ?? "professional",
     priority: draft.priority ?? "normal",
-    status: resolveDraftStatus(draft, fallbackStatus),
+    status,
     plannedWeek: hasDate ? plannedWeek : undefined,
     plannedDay: hasDate ? draft.plannedDay : undefined,
+    impact: draft.impact,
+    waitingKind: isWaiting ? (draft.waitingKind ?? (status === "delegated" ? ("delegated" as const) : undefined)) : undefined,
+    delegatedTo: isWaiting ? draft.delegatedTo?.trim() || undefined : undefined,
+    followUpAt: isWaiting ? draft.followUpAt || undefined : undefined,
   };
 }
 
@@ -121,6 +127,7 @@ export function createLocalActions(setTasks: Dispatch<SetStateAction<Task[]>>): 
         return {
           ...task,
           ...normalized,
+          waitingSince: normalized.waitingKind ? task.waitingSince ?? now : undefined,
           completedAt: normalized.status === "done" ? task.completedAt ?? now : undefined,
           updatedAt: now,
         };
@@ -145,6 +152,9 @@ export function createLocalActions(setTasks: Dispatch<SetStateAction<Task[]>>): 
           plannedWeek: task.plannedWeek ?? plannedWeek,
           plannedDay: task.plannedDay,
           completedAt: status === "done" ? task.completedAt ?? now : undefined,
+          ...(status === "delegated"
+            ? { waitingKind: task.waitingKind ?? ("delegated" as const), waitingSince: task.waitingSince ?? now }
+            : { waitingKind: undefined, delegatedTo: undefined, followUpAt: undefined, waitingSince: undefined }),
           updatedAt: now,
         };
       });
@@ -158,6 +168,9 @@ export function createLocalActions(setTasks: Dispatch<SetStateAction<Task[]>>): 
           plannedWeek: getIsoWeek(new Date(`${plannedDay}T12:00:00`)),
           plannedDay,
           completedAt: status === "done" ? task.completedAt ?? now : undefined,
+          ...(status === "delegated"
+            ? { waitingKind: task.waitingKind ?? ("delegated" as const), waitingSince: task.waitingSince ?? now }
+            : { waitingKind: undefined, delegatedTo: undefined, followUpAt: undefined, waitingSince: undefined }),
           updatedAt: now,
         };
       });

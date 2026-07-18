@@ -1952,3 +1952,215 @@ h1 {
     grid-template-columns: repeat(6, minmax(170px, 1fr));
   }
 }
+
+/* ---------- Tela HOJE (Mission Control) ---------- */
+
+.today-workspace {
+  display: block;
+}
+
+.today-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.today-col {
+  display: grid;
+  gap: 14px;
+}
+
+.today-block {
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xl);
+  padding: 14px 16px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.today-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+
+.today-block-header h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.today-block-header strong {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.attention-block.has-items {
+  border-color: var(--border-danger);
+}
+
+.attention-block.has-items .today-block-header h2 {
+  color: var(--danger);
+}
+
+.overdue-block.has-items .today-block-header h2 {
+  color: var(--warning);
+}
+
+.focus-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.focus-card.primary {
+  border-color: var(--focus-ring);
+  background: linear-gradient(180deg, var(--primary-soft), var(--surface-2) 70%);
+}
+
+.focus-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.focus-next-step {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.focus-next-step.muted {
+  color: var(--text-subtle);
+  font-style: italic;
+}
+
+.focus-chip {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--focus-ring);
+}
+
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+}
+
+.today-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.today-row-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.today-row-main small {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.today-row-main small.attention-reason {
+  color: var(--danger);
+  font-weight: 650;
+}
+
+.today-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.today-row-actions button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.today-row-actions button:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.replan-actions button:first-child {
+  border-color: var(--focus-ring);
+  color: var(--text-primary);
+}
+
+.today-empty {
+  font-size: 12px;
+  color: var(--text-subtle);
+  padding: 6px 2px;
+}
+
+.today-empty.positive {
+  color: var(--success);
+}
+
+.today-hint {
+  font-size: 11px;
+  color: var(--warning);
+}
+
+.delegation-fields {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: var(--surface-2);
+}
+
+.field-required {
+  font-size: 10px;
+  font-style: normal;
+  color: var(--danger);
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 900px) {
+  .today-view {
+    grid-template-columns: 1fr;
+  }
+}
